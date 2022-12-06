@@ -42,11 +42,30 @@ AWS_CLI_PROFILE=${2:-default}
 MFA_TOKEN_CODE=$1
 ARN_OF_MFA=$(grep "^$AWS_CLI_PROFILE=" $MFA_CONFIG | cut -d '=' -f2- | tr -d '"')
 
+# read credentials
+CREDENTIALS_FILE="$HOME/.aws/credentials"
+CREDENTIALS_TMP="$HOME/.aws/credentials.tmp"
+n=1
+while read line; do
+# reading the first three lines ()
+    if [ "$n" -eq 2 ]
+    then
+        ID=$(echo $line | cut -d "=" -f2)
+    elif [ "$n" -eq 3 ]
+    then
+        KEY=$(echo $line | cut -d "=" -f2)
+    fi    
+    n=$((n+1))
+done < $CREDENTIALS_FILE
+
 echo "AWS-CLI Profile: $AWS_CLI_PROFILE"
 echo "MFA ARN: $ARN_OF_MFA"
 echo "MFA Token Code: $MFA_TOKEN_CODE"
 
-echo "Your Temporary Creds:"
+printf "Checking MFA: \n"
 aws --profile $AWS_CLI_PROFILE sts get-session-token --duration 129600 \
   --serial-number $ARN_OF_MFA --token-code $MFA_TOKEN_CODE --output text \
-  | awk '{printf("export AWS_ACCESS_KEY_ID=\"%s\"\nexport AWS_SECRET_ACCESS_KEY=\"%s\"\nexport AWS_SESSION_TOKEN=\"%s\"\nexport AWS_SECURITY_TOKEN=\"%s\"\n",$2,$4,$5,$5)}' | tee $HOME/.token_file
+  | awk '{printf("[default]\naws_access_key_id='"$ID"'\naws_secret_access_key='"$KEY"'\n\n[mfa]\naws_access_key_id=%s\naws_secret_access_key=%s\naws_session_token=%s\n", $2, $4, $5)}' | tee $CREDENTIALS_TMP
+
+printf "Update %s\n" $CREDENTIALS_FILE
+mv $CREDENTIALS_TMP $CREDENTIALS_FILE
